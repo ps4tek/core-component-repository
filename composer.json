@@ -28,12 +28,12 @@
     },
     "autoload": {
         "psr-4": {
-            "MehediIitdu\\CoreComponentRepository\\": "src"
+            "Ps4tek\\CoreComponentRepository\\": "src"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "MehediIitdu\\CoreComponentRepository\\Tests\\": "tests"
+            "Ps4tek\\CoreComponentRepository\\Tests\\": "tests"
         }
     },
     "scripts": {
