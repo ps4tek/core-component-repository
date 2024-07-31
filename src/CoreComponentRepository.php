@@ -1,6 +1,6 @@
 <?php
 
-namespace MehediIitdu\CoreComponentRepository;
+namespace Ps4tek\CoreComponentRepository;
 
 use App\Models\Addon;
 use Cache;

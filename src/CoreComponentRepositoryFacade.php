@@ -1,11 +1,11 @@
 <?php
 
-namespace MehediIitdu\CoreComponentRepository;
+namespace Ps4tek\CoreComponentRepository;
 
 use Illuminate\Support\Facades\Facade;
 
 /**
- * @see \MehediIitdu\CoreComponentRepository\Skeleton\SkeletonClass
+ * @see \Ps4tek\CoreComponentRepository\Skeleton\SkeletonClass
  */
 class CoreComponentRepositoryFacade extends Facade
 {
