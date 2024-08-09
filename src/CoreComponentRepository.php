@@ -8,7 +8,11 @@ class CoreComponentRepository
 {
     public static function instantiateShopRepository()
     {
-        $data['url'] = $_SERVER[base64_decode("U0VSVkVSX05BTUU=")];
+        try {
+            $data['url'] = $_SERVER[base64_decode("U0VSVkVSX05BTUU=")];
+        } catch (\Throwable $th) {
+            return;
+        }
 
         $array = [
             base64_decode("aXNsYW13ZWI="),
