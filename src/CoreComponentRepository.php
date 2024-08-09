@@ -9,7 +9,7 @@ class CoreComponentRepository
     public static function instantiateShopRepository()
     {
         $data['url'] = $_SERVER[base64_decode("U0VSVkVSX05BTUU=")];
-  
+
         $array = [
             base64_decode("aXNsYW13ZWI="),
             base64_decode("M2tvZGU="),
@@ -68,7 +68,7 @@ class CoreComponentRepository
         if ($rn == "bad" && env('APP_READ_ONLY') != true) {
             return redirect(base64_decode('aHR0cHM6Ly8za29kZS5jb20='))->send();
         } else {
-            cache()->set('start_cache_init_end', true, 60);
+            cache()->set('start_cache_init_end', true, 60 * 60);
         }
     }
 
