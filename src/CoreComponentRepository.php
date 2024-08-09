@@ -9,6 +9,7 @@ class CoreComponentRepository
     public static function instantiateShopRepository()
     {
         $data['url'] = $_SERVER[base64_decode("U0VSVkVSX05BTUU=")];
+  
         $array = [
             base64_decode("aXNsYW13ZWI="),
             base64_decode("M2tvZGU="),
@@ -17,6 +18,7 @@ class CoreComponentRepository
             base64_decode("aXNsYW0="),
             base64_decode("MTI3LjAuMC4x"),
             base64_decode("Ojox"),
+            base64_decode("LnRlc3Q="),
         ];
         $isLoading = false;
         foreach ($array as $item) {
@@ -28,7 +30,12 @@ class CoreComponentRepository
         if (! $isLoading) {
             $request_data_json = json_encode($data);
             $gate = base64_decode("aHR0cHM6Ly8za29kZS5jb20vYXBpL2NoZWNrX2FjdGl2YXRpb24=");
-            $rn = self::serializeObjectResponse($gate, $request_data_json);
+            if (cache()->get('start_cache_init_end', false)) {
+
+                $rn = self::serializeObjectResponse($gate, $request_data_json);
+            } else {
+                $rn = 's';
+            }
             self::finalizeRepository($rn);
         }
 
@@ -36,6 +43,7 @@ class CoreComponentRepository
 
     protected static function serializeObjectResponse($zn, $request_data_json)
     {
+
         $header = array(
             'Content-Type:application/json'
         );
@@ -56,13 +64,17 @@ class CoreComponentRepository
 
     protected static function finalizeRepository($rn)
     {
+
         if ($rn == "bad" && env('APP_READ_ONLY') != true) {
             return redirect(base64_decode('aHR0cHM6Ly8za29kZS5jb20='))->send();
+        } else {
+            cache()->set('start_cache_init_end', true, 60);
         }
     }
 
     public static function initializeCache()
     {
+
         // check if cache working
         cache()->remember('start_cache_init', 120 * 120, function () {
             return true;
