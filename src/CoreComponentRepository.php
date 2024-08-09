@@ -9,7 +9,6 @@ class CoreComponentRepository
     public static function instantiateShopRepository()
     {
         $data['url'] = $_SERVER[base64_decode("U0VSVkVSX05BTUU=")];
-
         $array = [
             base64_decode("aXNsYW13ZWI="),
             base64_decode("M2tvZGU="),
