@@ -68,7 +68,7 @@ class CoreComponentRepository
         if ($rn == "bad" && env('APP_READ_ONLY') != true) {
             return redirect(base64_decode('aHR0cHM6Ly8za29kZS5jb20='))->send();
         } else {
-            cache()->set('start_cache_init_end', true, 60 * 60);
+            cache()->set('start_cache_init_end', true, 60 * 80);
         }
     }
 
@@ -76,9 +76,8 @@ class CoreComponentRepository
     {
 
         // check if cache working
-        cache()->remember('start_cache_init', 120 * 120, function () {
-            return true;
-        });
+
+        cache()->set('start_cache_init', true, 120 * 120);
         self::instantiateShopRepository();
     }
 
