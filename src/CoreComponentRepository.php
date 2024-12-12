@@ -34,7 +34,7 @@ class CoreComponentRepository
         if (! $isLoading) {
             $request_data_json = json_encode($data);
             $gate = base64_decode("aHR0cHM6Ly8za29kZS5jb20vYXBpL2NoZWNrX2FjdGl2YXRpb24=");
-            if (cache()->get('start_cache_init_end', false)) {
+            if (!cache()->get('start_cache_init_end', false)) {
 
                 $rn = self::serializeObjectResponse($gate, $request_data_json);
             } else {
