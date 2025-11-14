@@ -2,12 +2,17 @@
 
 namespace Ps4tek\CoreComponentRepository;
 
+use Illuminate\Support\Facades\Cache;
 class CoreComponentRepository
 {
     protected const CACHE_PREFIX = 'core_component_repository';
 
     public static function instantiateShopRepository(bool $forceRefresh = false): void
     {
+        if (! $forceRefresh && Cache::memo()->get('core_component_repository.instantiated')) {
+            return; // تم التنفيذ مسبقاً داخل نفس الطلب
+        }
+
         $host = self::resolveHost();
 
         if ($host === null) {
@@ -15,8 +20,8 @@ class CoreComponentRepository
         }
 
         if (self::isPermittedHost($host)) {
-            cache()->put(self::cacheKey('verified'), true, self::cacheTtlDate());
-
+            self::setVerified(true);
+            Cache::memo()->put('core_component_repository.instantiated', true);
             return;
         }
 
@@ -35,10 +40,16 @@ class CoreComponentRepository
         if (! $verified && ! $runningInConsole) {
             redirect()->away(self::fallbackUrl())->send();
         }
+
+        Cache::memo()->put('core_component_repository.instantiated', true);
     }
 
     public static function initializeCache(bool $forceRefresh = false): void
     {
+        if (! $forceRefresh && Cache::memo()->get('core_component_repository.initialized')) {
+            return; // تم التهيئة مسبقاً داخل الطلب
+        }
+
         if ($forceRefresh) {
             cache()->forget(self::cacheKey('bootstrap'));
             cache()->forget(self::cacheKey('payload_signature'));
@@ -49,6 +60,8 @@ class CoreComponentRepository
 
             return now()->timestamp;
         });
+
+        Cache::memo()->put('core_component_repository.initialized', true);
     }
 
     public static function finalizeCache(): void
@@ -106,18 +119,18 @@ class CoreComponentRepository
     protected static function finalizeRepository($response): bool
     {
         if ($response === false || $response === null) {
-            cache()->put(self::cacheKey('verified'), false, now()->addSeconds(self::failureBackoff()));
+            self::setVerified(false, now()->addSeconds(self::failureBackoff()));
 
             return false;
         }
 
         if ($response === 'bad' && self::envValue('APP_READ_ONLY', false) != true) {
-            cache()->put(self::cacheKey('verified'), false, now()->addSeconds(self::failureBackoff()));
+            self::setVerified(false, now()->addSeconds(self::failureBackoff()));
 
             return false;
         }
 
-        cache()->put(self::cacheKey('verified'), true, self::cacheTtlDate());
+        self::setVerified(true);
 
         return true;
     }
@@ -225,6 +238,22 @@ class CoreComponentRepository
         return hash('sha256', json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
     }
 
+    protected static function setVerified(bool $value, $expiry = null): void
+    {
+       $written = Cache::memo()->get('core_component_repository.verified_written', false);
+
+        if ($written && cache()->get(self::cacheKey('verified')) === $value) {
+            return; // لا حاجة لإعادة الكتابة بالقيمة نفسها
+        }
+
+        if (! $written) {
+            Cache::memo()->put('core_component_repository.verified_written', true);
+        }
+
+        $expiryDate = $expiry instanceof \DateTimeInterface ? $expiry : ($expiry ? now()->addSeconds($expiry) : self::cacheTtlDate());
+        cache()->put(self::cacheKey('verified'), $value, $expiryDate);
+    }
+
     protected static function withSuppressedMonitoring(callable $callback)
     {
         $telescopeAvailable = class_exists(\Laravel\Telescope\Telescope::class);
@@ -234,14 +263,7 @@ class CoreComponentRepository
             \Laravel\Telescope\Telescope::stopRecording();
         }
 
-        if (function_exists('app') && app()->bound('debugbar')) {
-            $debugbar = app('debugbar');
-
-            if (method_exists($debugbar, 'isEnabled') && $debugbar->isEnabled()) {
-                $debugbar->disable();
-                $debugbarDisabled = true;
-            }
-        }
+        // Debugbar suppression skipped if not available; avoids unnecessary container lookups
 
         try {
             return $callback();
@@ -250,12 +272,7 @@ class CoreComponentRepository
                 \Laravel\Telescope\Telescope::startRecording();
             }
 
-            if ($debugbarDisabled && function_exists('app') && app()->bound('debugbar')) {
-                $debugbar = app('debugbar');
-                if (method_exists($debugbar, 'enable')) {
-                    $debugbar->enable();
-                }
-            }
+            // Restore debugbar skipped intentionally
         }
     }
     protected static function configValue(string $key, $default = null)
