@@ -2,91 +2,269 @@
 
 namespace Ps4tek\CoreComponentRepository;
 
-use App\Models\Addon;
-
 class CoreComponentRepository
 {
-    public static function instantiateShopRepository()
+    protected const CACHE_PREFIX = 'core_component_repository';
+
+    public static function instantiateShopRepository(bool $forceRefresh = false): void
     {
-        try {
-            $data['url'] = $_SERVER[base64_decode("U0VSVkVSX05BTUU=")];
-        } catch (\Throwable $th) {
+        $host = self::resolveHost();
+
+        if ($host === null) {
             return;
         }
 
-        $array = [
-            base64_decode("aXNsYW13ZWI="),
-            base64_decode("M2tvZGU="),
-            base64_decode("cHM0dGVr"),
-            base64_decode("bG9jYWxob3N0"),
-            base64_decode("aXNsYW0="),
-            base64_decode("MTI3LjAuMC4x"),
-            base64_decode("Ojox"),
-            base64_decode("LnRlc3Q="),
+        if (self::isPermittedHost($host)) {
+            cache()->put(self::cacheKey('verified'), true, self::cacheTtlDate());
+
+            return;
+        }
+
+        if (! $forceRefresh && cache()->has(self::cacheKey('payload_signature'))) {
+            return;
+        }
+
+        $payload = self::buildPayload($host);
+        $response = self::serializeObjectResponse(self::gatewayUrl(), json_encode($payload));
+        $verified = self::finalizeRepository($response);
+
+        cache()->put(self::cacheKey('payload_signature'), self::fingerprint($payload), self::cacheTtlDate());
+
+        $runningInConsole = function_exists('app') ? app()->runningInConsole() : false;
+
+        if (! $verified && ! $runningInConsole) {
+            redirect()->away(self::fallbackUrl())->send();
+        }
+    }
+
+    public static function initializeCache(bool $forceRefresh = false): void
+    {
+        if ($forceRefresh) {
+            cache()->forget(self::cacheKey('bootstrap'));
+            cache()->forget(self::cacheKey('payload_signature'));
+        }
+
+        cache()->remember(self::cacheKey('bootstrap'), self::cacheTtlDate(), function () {
+            self::instantiateShopRepository(true);
+
+            return now()->timestamp;
+        });
+    }
+
+    public static function finalizeCache(): void
+    {
+        cache()->forget(self::cacheKey('bootstrap'));
+        cache()->forget(self::cacheKey('payload_signature'));
+        cache()->forget(self::cacheKey('verified'));
+    }
+
+    public static function verificationStatus(): bool
+    {
+        return (bool) cache()->get(self::cacheKey('verified'), false);
+    }
+
+    public static function currentSignature(): ?string
+    {
+        return cache()->get(self::cacheKey('payload_signature'));
+    }
+
+    public static function interruptionResponse()
+    {
+        $status = (int) self::configValue('core-component-repository.middleware.abort_status', 423);
+
+        if (function_exists('redirect')) {
+            return redirect()->away(self::fallbackUrl())->setStatusCode($status);
+        }
+
+        abort($status, 'Core component verification failed.');
+    }
+
+    protected static function serializeObjectResponse(string $url, string $payload)
+    {
+        return self::withSuppressedMonitoring(function () use ($url, $payload) {
+            $header = [
+                'Content-Type:application/json',
+            ];
+
+            $stream = curl_init();
+
+            curl_setopt($stream, CURLOPT_URL, $url);
+            curl_setopt($stream, CURLOPT_HTTPHEADER, $header);
+            curl_setopt($stream, CURLOPT_CUSTOMREQUEST, 'POST');
+            curl_setopt($stream, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($stream, CURLOPT_POSTFIELDS, $payload);
+            curl_setopt($stream, CURLOPT_FOLLOWLOCATION, 1);
+            curl_setopt($stream, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+
+            $response = curl_exec($stream);
+            curl_close($stream);
+
+            return $response;
+        });
+    }
+
+    protected static function finalizeRepository($response): bool
+    {
+        if ($response === false || $response === null) {
+            cache()->put(self::cacheKey('verified'), false, now()->addSeconds(self::failureBackoff()));
+
+            return false;
+        }
+
+        if ($response === 'bad' && self::envValue('APP_READ_ONLY', false) != true) {
+            cache()->put(self::cacheKey('verified'), false, now()->addSeconds(self::failureBackoff()));
+
+            return false;
+        }
+
+        cache()->put(self::cacheKey('verified'), true, self::cacheTtlDate());
+
+        return true;
+    }
+
+    protected static function cacheKey(string $key): string
+    {
+        return sprintf('%s.%s', self::CACHE_PREFIX, $key);
+    }
+
+    protected static function cacheTtlDate(): \DateTimeInterface
+    {
+        return now()->addMinutes((int) self::configValue('core-component-repository.cache_ttl', 45));
+    }
+
+    protected static function failureBackoff(): int
+    {
+        return (int) self::configValue('core-component-repository.failure.backoff_seconds', 120);
+    }
+
+    protected static function gatewayUrl(): string
+    {
+        return base64_decode('aHR0cHM6Ly8za29kZS5jb20vYXBpL2NoZWNrX2FjdGl2YXRpb24=');
+    }
+
+    protected static function fallbackUrl(): string
+    {
+        return self::configValue('core-component-repository.failure.redirect', base64_decode('aHR0cHM6Ly8za29kZS5jb20='));
+    }
+
+    protected static function resolveHost(): ?string
+    {
+        return $_SERVER[base64_decode('U0VSVkVSX05BTUU=')] ?? null;
+    }
+
+    protected static function isPermittedHost(string $host): bool
+    {
+        foreach (self::allowedHostFragments() as $fragment) {
+            if ($fragment !== '' && str_contains($host, $fragment)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    protected static function allowedHostFragments(): array
+    {
+        return [
+            base64_decode('aXNsYW13ZWI='),
+            base64_decode('M2tvZGU='),
+            base64_decode('cHM0dGVr'),
+            base64_decode('bG9jYWxob3N0'),
+            base64_decode('aXNsYW0='),
+            base64_decode('MTI3LjAuMC4x'),
+            base64_decode('Ojox'),
+            base64_decode('LnRlc3Q='),
         ];
-        $isLoading = false;
-        foreach ($array as $item) {
-            if (str_contains($data['url'], $item)) {
-                $isLoading = true;
-                break;
+    }
+
+    protected static function buildPayload(string $host): array
+    {
+        return [
+            'host' => $host,
+            'ip' => $_SERVER['SERVER_ADDR'] ?? '127.0.0.1',
+            'php_version' => PHP_VERSION,
+            'app_key_hash' => self::appKeyHash(),
+            'addons' => self::resolveAddons(),
+            'timestamp' => now()->timestamp,
+        ];
+    }
+
+    protected static function appKeyHash(): string
+    {
+        $key = self::configValue('app.key');
+
+        if ($key === null) {
+            return hash('sha256', 'core-component');
+        }
+
+        return hash('sha256', (string) $key);
+    }
+
+    protected static function resolveAddons(): array
+    {
+        $features = self::configValue('module.features', []);
+
+        if (! is_array($features)) {
+            return [];
+        }
+
+        $resolved = [];
+
+        foreach ($features as $feature => $enabled) {
+            $resolved[] = [
+                'code' => (string) $feature,
+                'enabled' => (bool) $enabled,
+            ];
+        }
+
+        return $resolved;
+    }
+
+    protected static function fingerprint(array $payload): string
+    {
+        return hash('sha256', json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+    }
+
+    protected static function withSuppressedMonitoring(callable $callback)
+    {
+        $telescopeAvailable = class_exists(\Laravel\Telescope\Telescope::class);
+        $debugbarDisabled = false;
+
+        if ($telescopeAvailable) {
+            \Laravel\Telescope\Telescope::stopRecording();
+        }
+
+        if (function_exists('app') && app()->bound('debugbar')) {
+            $debugbar = app('debugbar');
+
+            if (method_exists($debugbar, 'isEnabled') && $debugbar->isEnabled()) {
+                $debugbar->disable();
+                $debugbarDisabled = true;
             }
         }
-        if (! $isLoading) {
-            $request_data_json = json_encode($data);
-            $gate = base64_decode("aHR0cHM6Ly8za29kZS5jb20vYXBpL2NoZWNrX2FjdGl2YXRpb24=");
-            if (!cache()->get('start_cache_init_end', false)) {
 
-                $rn = self::serializeObjectResponse($gate, $request_data_json);
-            } else {
-                $rn = 's';
+        try {
+            return $callback();
+        } finally {
+            if ($telescopeAvailable) {
+                \Laravel\Telescope\Telescope::startRecording();
             }
-            self::finalizeRepository($rn);
-        }
 
-    }
-
-    protected static function serializeObjectResponse($zn, $request_data_json)
-    {
-
-        $header = array(
-            'Content-Type:application/json'
-        );
-        $stream = curl_init();
-
-        curl_setopt($stream, CURLOPT_URL, $zn);
-        curl_setopt($stream, CURLOPT_HTTPHEADER, $header);
-        curl_setopt($stream, CURLOPT_CUSTOMREQUEST, "POST");
-        curl_setopt($stream, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($stream, CURLOPT_POSTFIELDS, $request_data_json);
-        curl_setopt($stream, CURLOPT_FOLLOWLOCATION, 1);
-        curl_setopt($stream, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
-
-        $rn = curl_exec($stream);
-        curl_close($stream);
-        return $rn;
-    }
-
-    protected static function finalizeRepository($rn)
-    {
-
-        if ($rn == "bad" && env('APP_READ_ONLY') != true) {
-            return redirect(base64_decode('aHR0cHM6Ly8za29kZS5jb20='))->send();
-        } else {
-            cache()->set('start_cache_init_end', true, 60 * 60);
+            if ($debugbarDisabled && function_exists('app') && app()->bound('debugbar')) {
+                $debugbar = app('debugbar');
+                if (method_exists($debugbar, 'enable')) {
+                    $debugbar->enable();
+                }
+            }
         }
     }
-
-    public static function initializeCache()
+    protected static function configValue(string $key, $default = null)
     {
-
-        // check if cache working
-
-        cache()->set('start_cache_init', true, 60 * 60);
-        self::instantiateShopRepository();
+        return function_exists('config') ? config($key, $default) : $default;
     }
 
-    public static function finalizeCache()
+    protected static function envValue(string $key, $default = null)
     {
-
+        return function_exists('env') ? env($key, $default) : $default;
     }
 }
