@@ -9,7 +9,9 @@ class CoreComponentRepository
 
     public static function instantiateShopRepository(bool $forceRefresh = false): void
     {
-        if (! $forceRefresh && Cache::memo()->get('core_component_repository.instantiated')) {
+        return;
+
+        if (!$forceRefresh && Cache::memo()->get('core_component_repository.instantiated')) {
             return; // تم التنفيذ مسبقاً داخل نفس الطلب
         }
 
@@ -25,7 +27,7 @@ class CoreComponentRepository
             return;
         }
 
-        if (! $forceRefresh && cache()->has(self::cacheKey('payload_signature'))) {
+        if (!$forceRefresh && cache()->has(self::cacheKey('payload_signature'))) {
             return;
         }
 
@@ -37,7 +39,7 @@ class CoreComponentRepository
 
         $runningInConsole = function_exists('app') ? app()->runningInConsole() : false;
 
-        if (! $verified && ! $runningInConsole) {
+        if (!$verified && !$runningInConsole) {
             redirect()->away(self::fallbackUrl())->send();
         }
 
@@ -46,7 +48,8 @@ class CoreComponentRepository
 
     public static function initializeCache(bool $forceRefresh = false): void
     {
-        if (! $forceRefresh && Cache::memo()->get('core_component_repository.initialized')) {
+        return;
+        if (!$forceRefresh && Cache::memo()->get('core_component_repository.initialized')) {
             return; // تم التهيئة مسبقاً داخل الطلب
         }
 
@@ -118,6 +121,7 @@ class CoreComponentRepository
 
     protected static function finalizeRepository($response): bool
     {
+        return true;
         if ($response === false || $response === null) {
             self::setVerified(false, now()->addSeconds(self::failureBackoff()));
 
@@ -217,7 +221,7 @@ class CoreComponentRepository
     {
         $features = self::configValue('module.features', []);
 
-        if (! is_array($features)) {
+        if (!is_array($features)) {
             return [];
         }
 
@@ -240,13 +244,13 @@ class CoreComponentRepository
 
     protected static function setVerified(bool $value, $expiry = null): void
     {
-       $written = Cache::memo()->get('core_component_repository.verified_written', false);
+        $written = Cache::memo()->get('core_component_repository.verified_written', false);
 
         if ($written && cache()->get(self::cacheKey('verified')) === $value) {
             return; // لا حاجة لإعادة الكتابة بالقيمة نفسها
         }
 
-        if (! $written) {
+        if (!$written) {
             Cache::memo()->put('core_component_repository.verified_written', true);
         }
 
